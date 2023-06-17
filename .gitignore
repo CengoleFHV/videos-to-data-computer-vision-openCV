@@ -279,3 +279,4 @@ pyrightconfig.json
 
 .vscode
 *.csv
+*.ixc
