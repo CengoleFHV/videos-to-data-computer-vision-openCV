@@ -5,14 +5,20 @@ import datetime
 import numpy as np
 import pandas as pd
 
+step_by_step = False
+
 threshhold = 90
+monitor_mask_on_threshhold = 80
+monitor_mask_off_threshhold = 10
+led_mask_on_threshhold = 35
+led_mask_off_threshhold = 5
 show_image_size = (1000, 750)
 # colours should be entered in RGB format, for better understanding
 # these bounds are subsequently converted to the OpenCV-needed BGR-format
-led_lower_bound = [235, 235, 235]
-led_upper_bound = [255, 255, 255]
-monitor_lower_bound = [0, 98, 128]
-monitor_upper_bound = [255, 255, 255]
+led_lower_bound = np.array([183, 38, 8])
+led_upper_bound = np.array([255, 255, 255])
+monitor_lower_bound = np.array([0, 19, 13])
+monitor_upper_bound = np.array([56, 166, 129])
 
 led_lower_bound = led_lower_bound[::-1]
 led_upper_bound = led_upper_bound[::-1]
@@ -50,8 +56,14 @@ for root, dirs, files in os.walk(videos_path):
             videos.append(f"{root}\\{file}")
 
 
-def create_csv_from_df(frame_data, video_name):
-    frame_data.to_csv(f"{export_path}\\{video_name}_data_{timestamp}.csv", index=False)
+def create_csv_from_df(video_name, led_frames, monitor_frames):
+    d = dict(leds=led_frames, monitor=monitor_frames)
+
+    pd.DataFrame(dict([(k, pd.Series(v)) for k, v in d.items()])).to_csv(
+        f"{export_path}\\{video_name}_data_{timestamp}.csv", index=False
+    )
+
+    # frame_data.to_csv(f"{export_path}\\{video_name}_data_{timestamp}.csv", index=False)
 
 
 def show_image_with_size(name, image, size):
@@ -82,37 +94,36 @@ def get_percentage_of_mask_fill(frame):
 
 
 def get_monitor_mask_percentage(frame):
-    frame = crop_image_by_percent(frame)
-
-    lower = np.array([128, 98, 0])
-    upper = np.array([255, 255, 255])
+    lower = monitor_lower_bound
+    upper = monitor_upper_bound
 
     monitor_mask = cv2.inRange(frame, lower, upper)
+    monitor_mask = monitor_mask[
+        int(monitor_mask.shape[0] * 0) : int(monitor_mask.shape[0] * 0.7),
+        int((monitor_mask.shape[1]) * 0) : int((monitor_mask.shape[1]) * 1),
+    ]
+
     monitor_mask_percentage = get_percentage_of_mask_fill(monitor_mask)
 
-    show_image_with_size("monitor_mask", monitor_mask, show_image_size)
+    # show_image_with_size("monitor_mask", monitor_mask, show_image_size)
 
     return monitor_mask, monitor_mask_percentage
 
 
 def get_led_mask_percentage(frame):
-    lower = np.array([235, 235, 235])
-    upper = np.array([255, 255, 255])
+    lower = led_lower_bound
+    upper = led_upper_bound
 
     led_mask = cv2.inRange(frame, lower, upper)
     led_mask = led_mask[
-        int(led_mask.shape[0] * 0.9) : int(led_mask.shape[0] * 0.975),
-        int((led_mask.shape[1] / 2) * 0.95) : int((led_mask.shape[1] / 2) * 1),
+        int(led_mask.shape[0] * 0.75) : int(led_mask.shape[0] * 0.85),
+        int((led_mask.shape[1] / 2) * 0.95) : int((led_mask.shape[1] / 2) * 1.05),
     ]
     led_mask_percentage = get_percentage_of_mask_fill(led_mask)
 
-    show_image_with_size("led_mask", led_mask, show_image_size)
+    # show_image_with_size("led_mask", led_mask, show_image_size)
 
     return led_mask, led_mask_percentage
-
-
-def create_csv_from_df(frame_data, video_name):
-    frame_data.to_csv(f"{export_path}\\{video_name}_data_{timestamp}.csv", index=False)
 
 
 def process_video(video, video_name):
@@ -121,7 +132,7 @@ def process_video(video, video_name):
     clicked = False
     showed = False
 
-    frame_data = pd.DataFrame({"LED": [], "Monitor": []})
+    # frame_data = pd.DataFrame({"LED": [], "Monitor": []})
     led_frames = []
     monitor_frames = []
 
@@ -141,21 +152,11 @@ def process_video(video, video_name):
             print("showed", showed)
             print("clicked", clicked)
 
-            if monitor_mask_percentage >= 80 and not showed:
+            if monitor_mask_percentage >= monitor_mask_on_threshhold and not showed:
                 print("Monitor on")
                 showed = True
 
                 try:
-                    # print(f"Creating... monitor_frame_{current_frametime}.png")
-                    # print(f"Creating... monitor_mask_frame_{current_frametime}.png")
-
-                    # cv2.imwrite(
-                    #     f"{export_path}/monitor_frame_{current_frametime}.png", frame
-                    # )
-                    # cv2.imwrite(
-                    #     f"{export_path}/monitor_mask_frame_{current_frametime}.png",
-                    #     monitor_mask,
-                    # )
                     monitor_frames.append(current_frametime)
 
                 except:
@@ -163,43 +164,34 @@ def process_video(video, video_name):
             else:
                 print("Monitor off")
 
-            if led_mask_percentage >= 5 and not clicked:
+            if led_mask_percentage >= led_mask_on_threshhold and not clicked:
                 print("Click LED on")
                 clicked = True
                 try:
-                    # print(f"Creating... led_mask_frame_{current_frametime}.png")
-                    # print(f"Creating... led_frame_{current_frametime}.png")
-                    # cv2.imwrite(
-                    #     f"{export_path}/led_frame_{current_frametime}.png", frame
-                    # )
-                    # cv2.imwrite(
-                    #     f"{export_path}/led_mask_frame_{current_frametime}.png",
-                    #     led_mask,
-                    # )
                     led_frames.append(current_frametime)
                 except:
                     print("Creating Files didn't Work")
             else:
                 print("Click LED off")
 
-            if led_mask_percentage <= 2 and clicked:
+            if led_mask_percentage <= led_mask_off_threshhold and clicked:
                 clicked = False
 
-            if monitor_mask_percentage < 50 and showed:
+            if monitor_mask_percentage < monitor_mask_off_threshhold and showed:
                 showed = False
 
             show_image_with_size(f"monitor_mask", monitor_mask, show_image_size)
-            cv2.imshow(f"led_mask", led_mask)
+            cv2.imshow(
+                f"led_mask",
+                led_mask,
+            )
 
-            cv2.waitKey(1)
+            cv2.waitKey(0 if step_by_step else 1)
             current_frametime += 1
             print("-----------------------------------------")
         else:
-            frame_data["LED"] = led_frames
-            frame_data["Monitor"] = monitor_frames
+            create_csv_from_df(video_name, led_frames, monitor_frames)
             break
-
-    create_csv_from_df(frame_data, video_name)
 
 
 check_if_path_exists_or_create(export_path)
